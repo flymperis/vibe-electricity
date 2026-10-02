@@ -42,3 +42,25 @@ journalctl --user -u vibe-electricity.service -f
 Το `update.sh` αλλάζει μόνο τον κώδικα. Δεν αγγίζει τη βάση (μόνο κρατά backup στο `/data/backups`), το `.env` ή τα
 units στο `~/.config/containers/systemd`. Οι αλλαγές στο σχήμα της βάσης γίνονται αυτόματα στην εκκίνηση και μόνο
 προσθέτουν στήλες.
+
+## Η βάση σε δικό σου φάκελο (π.χ. RAID)
+
+Από προεπιλογή η βάση είναι στο storage του Podman. Μεταφορά σε δικό σου φάκελο:
+
+```bash
+DIR=/srv/vibe-electricity          # φάκελος μόνο για το Vibe Electricity (παίρνει SELinux label)
+systemctl --user stop vibe-electricity.service
+podman volume export vibe-electricity-data -o ~/vibe-electricity-data-backup.tar
+mkdir -p "$DIR"
+podman unshare cp -a "$(podman volume inspect vibe-electricity-data --format '{{.Mountpoint}}')/." "$DIR/"
+podman unshare chown -R 1000:1000 "$DIR"
+# ξεσχολίασε Device= (= $DIR), Type= και Options= στο ~/.config/containers/systemd/vibe-electricity.volume
+podman rm -f vibe-electricity
+podman volume rm vibe-electricity-data
+systemctl --user daemon-reload
+systemctl --user restart vibe-electricity-volume.service   # αλλιώς το παλιό volume service θεωρείται ήδη ενεργό
+systemctl --user start vibe-electricity.service
+```
+
+Έλεγχος: το `podman volume inspect vibe-electricity-data --format '{{.Options}}'` πρέπει να δείχνει `device:<φάκελος>`.
+Αν βγάζει `map[]`, το container έφτιαξε νέο, άδειο volume. Σε αυτή την περίπτωση επανάλαβε τα βήματα από το `podman rm -f`.
