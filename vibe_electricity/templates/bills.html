@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, method_badge %}
+{% block title %}Λογαριασμοί · Vibe Electricity{% endblock %}
+{% block content %}
+<div class="row page-head">
+  <h1>Λογαριασμοί</h1>
+  <div class="row" style="gap:8px">
+    {% if years|length > 1 %}
+    <nav class="seg" aria-label="Έτος">
+      <a href="/bills" class="{{ 'on' if year is none }}">Όλοι</a>
+      {% for y in years %}<a href="/bills?year={{ y }}" class="{{ 'on' if year == y }}">{{ y }}</a>{% endfor %}
+    </nav>
+    {% endif %}
+    <a class="btn ghost" href="/export.csv" title="Όλοι οι λογαριασμοί σε CSV (Excel)">⤓ CSV</a>
+  </div>
+</div>
+
+{% if failed %}
+<section class="panel pad" style="margin-bottom:14px;border-color:var(--bad)">
+  <h2 style="color:var(--bad)">Έγγραφα που δεν διαβάστηκαν</h2>
+  {% for d in failed %}
+    <div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px dashed var(--line)">
+      <div style="min-width:0"><a href="{{ doc_link(d.paperless_id) }}" target="_blank" rel="noopener">#{{ d.paperless_id }} {{ d.title }}</a>
+        <div class="small muted">{{ d.message }}</div></div>
+      <form method="post" action="/documents/{{ d.paperless_id }}/process"><button class="ghost">Ξανά</button></form>
+    </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if totals %}
+<div class="kpis four">
+  <div class="panel kpi"><span class="k">Λογαριασμοί</span><span class="v">{{ totals.bills }}</span><span class="sub">{{ totals.days }} ημέρες</span></div>
+  <div class="panel kpi"><span class="k">Κατανάλωση</span><span class="v">{{ totals.kwh|num(0) }} <small>kWh</small></span><span class="sub">{{ totals.kwh_per_day|num(1) }} kWh/ημέρα</span></div>
+  <div class="panel kpi"><span class="k">Κόστος</span><span class="v">{{ totals.cost|eur }}</span><span class="sub">≈ {{ totals.cost_per_month|eur }} τον μήνα</span></div>
+  <div class="panel kpi"><span class="k">Μέσο €/kWh</span><span class="v">{{ totals.rate|num(3) }}</span><span class="sub">με όλες τις χρεώσεις</span></div>
+</div>
+{% endif %}
+
+<div class="panel table-wrap">
+  <table class="cards bills">
+    <thead><tr>
+      <th>Μήνας</th><th>Περίοδος</th><th class="num">kWh</th><th class="num wide-only d-only">kWh/ημ.</th>
+      <th class="num">Ποσό</th><th class="num wide-only d-only">Προμήθεια</th><th class="num wide-only d-only">Ρυθμιζ.</th>
+      <th class="num">€/kWh</th><th class="d-only">Έλεγχος</th>
+    </tr></thead>
+    <tbody>
+    {% for b in bills %}
+      <tr>
+        <td class="c-period"><a href="/bills/{{ b.id }}">{{ month_label(b.month, True) }}</a>
+          <span class="m-only">{{ status_badge(b.status) }}</span></td>
+        <td class="c-full small muted">{{ b.period_start|dt }} – {{ b.period_end|dt }} · {{ b.period_days }} ημ.</td>
+        <td class="num c-metric" data-label="Κατανάλωση">{{ b.kwh|num(0) }}</td>
+        <td class="num wide-only d-only">{{ b.kwh_per_day|num(1) }}</td>
+        <td class="num c-metric" data-label="Ποσό"><b>{{ b.total_payable|eur }}</b></td>
+        <td class="num wide-only d-only">{{ b.supply_total|eur }}</td>
+        <td class="num wide-only d-only">{{ b.regulated_total|eur }}</td>
+        <td class="num c-metric" data-label="€/kWh">{{ b.all_in_rate|num(3) }}</td>
+        <td class="d-only">{{ status_badge(b.status) }} {{ method_badge(b.method) if b.method != 'rules' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="pad muted">Δεν υπάρχουν λογαριασμοί.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, delta %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+{% if not bills %}
+  <div class="panel empty">
+    <div class="big">⚡</div>
+    <h1>Δεν υπάρχουν ακόμα λογαριασμοί</h1>
+    <p class="muted">Ανέβασε έναν λογαριασμό ρεύματος στο Paperless. Μόλις πάρει το tag
+      <b>{{ tag }}</b>, εμφανίζεται εδώ.</p>
+    <p><a class="btn" href="/settings">Ρυθμίσεις και κατάσταση σύνδεσης</a></p>
+  </div>
+{% else %}
+{% set L = s.last %}
+<div class="row page-head">
+  <div>
+    <h1>Επισκόπηση</h1>
+    <div class="muted small">{{ s.all.bills }} λογαριασμοί από {{ month_label(s.first.month, True) }} έως {{ month_label(L.month, True) }}</div>
+  </div>
+</div>
+
+{% if errors or warn %}
+  <div class="flash">
+    {% if errors %}<a href="/bills">{{ errors }} έγγραφ{{ 'ο' if errors == 1 else 'α' }} δεν διαβάστηκ{{ 'ε' if errors == 1 else 'αν' }}</a>{% endif %}
+    {% if errors and warn %} · {% endif %}
+    {% if warn %}<a href="/bills">{{ warn }} λογαριασμ{{ 'ός' if warn == 1 else 'οί' }} με έλεγχο που δεν ταιριάζει</a>{% endif %}
+  </div>
+{% endif %}
+
+<div class="kpis six">
+  <a class="panel kpi hero" href="/bills/{{ L.id }}" style="color:inherit;text-decoration:none">
+    <span class="k">Τελευταίος λογαριασμός · {{ month_label(L.month, True) }}</span>
+    <span class="v">{{ L.total_payable|eur }}</span>
+    <span class="sub">{{ L.period_start|dt }} – {{ L.period_end|dt }} · λήξη {{ L.due_date|dt }}</span>
+  </a>
+  <div class="panel kpi">
+    <span class="k">Κατανάλωση τελευταίου</span>
+    <span class="v">{{ L.kwh|num(0) }} <small>kWh</small></span>
+    <span class="sub">{{ L.kwh_per_day|num(1) }} kWh/ημέρα {{ delta(s.last_vs_prev_kwh_day) }}
+      <span title="σε σχέση με τον προηγούμενο λογαριασμό">vs προηγ.</span></span>
+    {% if s.last_vs_year_ago_kwh_day is not none %}<span class="sub">{{ delta(s.last_vs_year_ago_kwh_day) }} vs ίδιο μήνα πέρσι</span>{% endif %}
+  </div>
+  <div class="panel kpi">
+    <span class="k">Πραγματικό κόστος ανά kWh</span>
+    <span class="v">{{ L.all_in_rate|num(3) }} <small>€/kWh</small></span>
+    <span class="sub">με όλες τις χρεώσεις · μέσος 12μ: {{ s.y.rate|num(3) }}</span>
+    <span class="sub">τιμή ενέργειας ΔΕΗ: {{ L.energy_rate|num(4) }} €/kWh</span>
+  </div>
+  <div class="panel kpi">
+    <span class="k">Μέσο μηνιαίο κόστος (12 μήνες)</span>
+    <span class="v">{{ s.y.cost_per_month|eur }}</span>
+    <span class="sub">{% if s.y_vs_prev_cost is not none %}{{ delta(s.y_vs_prev_cost) }} vs προηγούμενο 12μηνο{% else %}{{ s.y.bills }} λογαριασμοί στο 12μηνο{% endif %}</span>
+  </div>
+  <div class="panel kpi">
+    <span class="k">Σύνολο 12 μηνών</span>
+    <span class="v">{{ s.y.cost|eur(0) }}</span>
+    <span class="sub">{{ s.y.kwh|num(0) }} kWh · {{ s.y.days }} ημέρες</span>
+  </div>
+  <div class="panel kpi">
+    <span class="k">Μέση ημερήσια κατανάλωση (12μ)</span>
+    <span class="v">{{ s.y.kwh_per_day|num(1) }} <small>kWh</small></span>
+    <span class="sub">{% if s.y_vs_prev_kwh is not none %}{{ delta(s.y_vs_prev_kwh) }} vs προηγούμενο 12μηνο{% else %}≈ {{ (s.y.kwh_per_day * 30.44)|num(0) }} kWh τον μήνα{% endif %}</span>
+  </div>
+</div>
+
+<div class="grid2">
+  <section class="panel pad">
+    <h2>Κατανάλωση ανά λογαριασμό</h2>
+    <div class="chart-box sm"><canvas id="c-kwh"></canvas></div>
+  </section>
+  <section class="panel pad">
+    <h2>Κόστος ανά λογαριασμό</h2>
+    <div class="chart-box sm"><canvas id="c-cost"></canvas></div>
+  </section>
+</div>
+
+<div class="grid2" style="margin-top:14px">
+  <section class="panel pad">
+    <h2>Πού πήγαν τα χρήματα (12 μήνες)</h2>
+    {% set colors = ['--c1', '--c5', '--good', '--c2', '--c3', '--c4', '--warn', '--muted', '--bad'] %}
+    {% set pos = composition|selectattr('value', 'gt', 0)|list %}
+    <div class="bar">{% for p in pos %}<span style="width:{{ p.pct }}%;background:var({{ colors[loop.index0 % colors|length] }})" title="{{ p.label }} {{ p.pct }}%"></span>{% endfor %}</div>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+        {% for p in composition %}
+          <tr><td>{% if p.value > 0 %}<i class="dot" style="background:var({{ colors[loop.index0 % colors|length] }})"></i>{% endif %}{{ p.label }}</td>
+            <td class="num">{{ p.value|eur }}</td><td class="num muted">{% if p.value > 0 %}{{ p.pct|num(1) }}%{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="row section-head pad" style="margin:0;padding-bottom:0"><h2>Πρόσφατοι λογαριασμοί</h2><a href="/bills">Όλοι →</a></div>
+    <div class="table-wrap">
+      <table class="cards bills">
+        <thead><tr><th>Μήνας</th><th class="num">kWh</th><th class="num">Ποσό</th><th class="num">€/kWh</th></tr></thead>
+        <tbody>
+        {% for b in recent %}
+          <tr>
+            <td class="c-period"><a href="/bills/{{ b.id }}">{{ month_label(b.month, True) }}</a> {% if b.status != 'ok' %}{{ status_badge(b.status) }}{% endif %}</td>
+            <td class="num c-metric" data-label="Κατανάλωση">{{ b.kwh|num(0) }} kWh</td>
+            <td class="num c-metric" data-label="Ποσό">{{ b.total_payable|eur }}</td>
+            <td class="num c-metric" data-label="€/kWh">{{ b.all_in_rate|num(3) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if bills %}
+<script src="/static/charts.js?v={{ static_v('charts.js') }}"></script>
+<script>
+const S = {{ series|tojson }};
+const { C, fmt, alpha } = VE;
+const goto = (evt, els) => { if (els.length) location.href = '/bills/' + S.ids[els[0].index]; };
+new Chart(document.getElementById('c-kwh'), {
+  data: { labels: S.labels, datasets: [
+    { type: 'bar', label: 'kWh', data: S.kwh, backgroundColor: alpha(C.c1, .75), yAxisID: 'y', order: 2 },
+    { type: 'line', label: 'kWh/ημέρα', data: S.kwh_per_day, borderColor: C.c2, backgroundColor: C.c2, yAxisID: 'y1', order: 1 },
+  ]},
+  options: { onClick: goto,
+    scales: { y: { beginAtZero: true, title: { display: !VE.small(), text: 'kWh' } },
+              y1: { position: 'right', beginAtZero: true, grid: { display: false }, title: { display: !VE.small(), text: 'kWh/ημέρα' } } },
+    plugins: { tooltip: { callbacks: { title: (it) => S.labels[it[0].dataIndex] + ' · ' + S.periods[it[0].dataIndex],
+      label: (c) => c.datasetIndex ? ' ' + fmt.kwhd(c.raw) : ' ' + fmt.kwh(c.raw) } } } },
+});
+new Chart(document.getElementById('c-cost'), {
+  data: { labels: S.labels, datasets: [
+    { type: 'bar', label: 'Προμήθεια', data: S.supply, backgroundColor: alpha(C.c1, .8), stack: 'c', yAxisID: 'y' },
+    { type: 'bar', label: 'Δίκτυο & ρυθμιζόμενες', data: S.regulated, backgroundColor: alpha(C.c2, .8), stack: 'c', yAxisID: 'y' },
+    { type: 'bar', label: 'Δήμος, ΕΡΤ, φόροι, ΦΠΑ', data: S.taxes, backgroundColor: alpha(C.c3, .75), stack: 'c', yAxisID: 'y' },
+    { type: 'line', label: '€/kWh (όλα)', data: S.all_in_rate, borderColor: C.text, backgroundColor: C.text, yAxisID: 'y1', borderWidth: 1.5 },
+  ]},
+  options: { onClick: goto,
+    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: (x) => x + ' €' } },
+              y1: { position: 'right', grid: { display: false }, ticks: { callback: (x) => fmt.num(2)(x) } } },
+    plugins: { tooltip: { callbacks: {
+      title: (it) => S.labels[it[0].dataIndex] + ' · ' + fmt.eur(S.cost[it[0].dataIndex]),
+      label: (c) => ' ' + c.dataset.label + ': ' + (c.dataset.yAxisID === 'y1' ? fmt.rate(c.raw) : fmt.eur(c.raw)) } } } },
+});
+</script>
+{% endif %}
+{% endblock %}

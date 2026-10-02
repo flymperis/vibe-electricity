@@ -1,0 +1,9 @@
+.venv
+data
+tests
+.env
+**/__pycache__
+.git
+deploy
+.claude
+PROGRESS.md

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_macros.html" import doc_badge %}
+{% block title %}Ρυθμίσεις · Vibe Electricity{% endblock %}
+{% block content %}
+{% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
+<div class="row page-head"><h1>Ρυθμίσεις</h1></div>
+
+<div class="grid2">
+  <section class="panel pad">
+    <h2>Σύνδεση</h2>
+    <dl class="field-grid" style="grid-template-columns:1fr">
+      <div><dt>Paperless</dt><dd class="mono">{{ env.paperless_url }}</dd></div>
+      <div><dt>Token</dt><dd>{{ 'ορισμένο' if env.paperless_token else 'λείπει (PAPERLESS_TOKEN)' }}</dd></div>
+      <div><dt>Webhook</dt><dd class="mono">POST /api/webhook {{ '(με secret)' if env.webhook_secret else '' }}</dd></div>
+      <div><dt>Τελευταίος συγχρονισμός</dt><dd>{{ state.last_sync|dt if state.last_sync else '—' }}
+        {% if state.last_result %}<span class="muted small">{% for k, v in state.last_result.items() %}{{ k }} {{ v }}{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}</dd></div>
+    </dl>
+    {% if state.last_error %}<pre class="err">{{ state.last_error }}</pre>{% endif %}
+    <div class="row" style="margin-top:12px;gap:8px">
+      <button type="button" class="ghost" id="check-btn">Έλεγχος σύνδεσης</button>
+      <form method="post" action="/sync"><button>↻ Συγχρονισμός τώρα</button></form>
+      <form method="post" action="/sync" onsubmit="return confirm('Να ξαναδιαβαστούν όλα τα έγγραφα; Οι διορθώσεις που έκανες με το χέρι κρατιούνται.')">
+        <input type="hidden" name="force" value="true"><button class="ghost">Ξαναδιάβασμα όλων</button></form>
+    </div>
+    <div id="check-out" class="check-out"></div>
+  </section>
+
+  <section class="panel pad">
+    <h2>Ρυθμίσεις εφαρμογής</h2>
+    <form method="post" action="/settings">
+      <label class="field"><span>Tag του Paperless για λογαριασμούς ρεύματος</span>
+        <input name="paperless_tag" value="{{ rt.paperless_tag }}" required></label>
+      <label class="field"><span>Συγχρονισμός κάθε (λεπτά): εφεδρεία, το webhook φέρνει τους νέους αμέσως</span>
+        <input name="sync_interval_minutes" type="number" min="5" max="1440" value="{{ rt.sync_interval_minutes }}"></label>
+      <label class="chk" style="margin-bottom:8px"><input type="checkbox" name="llm_enabled" value="true" {{ 'checked' if rt.llm_enabled }}>
+        Χρήση AI (Ollama) για λογαριασμούς που δεν διαβάζουν οι κανόνες</label>
+      <div class="row">
+        <label class="field" style="flex:2 1 220px"><span>Ollama URL</span><input name="ollama_url" value="{{ rt.ollama_url }}"></label>
+        <label class="field" style="flex:1 1 160px"><span>Μοντέλο</span><input name="ollama_model" id="model-input" list="models" value="{{ rt.ollama_model }}"></label>
+        <datalist id="models"></datalist>
+      </div>
+      <button type="submit">Αποθήκευση</button>
+    </form>
+  </section>
+</div>
+
+<section class="panel" style="margin-top:14px">
+  <div class="row section-head pad" style="margin:0;padding-bottom:0">
+    <h2>Έγγραφα από το Paperless</h2>
+    <span class="muted small">{% for k, v in counts.items() %}{{ doc_badge(k) }} {{ v }} {% endfor %}</span>
+  </div>
+  <div class="table-wrap">
+    <table class="cards docs">
+      <thead><tr><th>#</th><th>Τίτλος</th><th>Κατάσταση</th><th>Σημείωση</th><th></th></tr></thead>
+      <tbody>
+      {% for d in docs %}
+        <tr>
+          <td class="small"><a href="{{ doc_link(d.paperless_id) }}" target="_blank" rel="noopener">#{{ d.paperless_id }}</a></td>
+          <td class="title">{% if d.bill_id %}<a href="/bills/{{ d.bill_id }}">{{ d.title }}</a>{% else %}{{ d.title }}{% endif %}</td>
+          <td>{{ doc_badge(d.status) }}</td>
+          <td class="c-msg small muted">{{ d.message or '' }}</td>
+          <td><form method="post" action="/documents/{{ d.paperless_id }}/process"><button class="ghost" style="padding:2px 8px;font-size:12px">Ξανά</button></form></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="pad muted">Κανένα έγγραφο ακόμα. Πάτα «Συγχρονισμός τώρα».</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel pad" style="margin-top:14px">
+  <h2>Δραστηριότητα</h2>
+  {% for e in events %}
+    <div class="small" style="padding:3px 0;border-bottom:1px dashed var(--line)">
+      <span class="muted mono">{{ e.ts|dt }}</span> <span class="ev-{{ e.level }}">{{ e.message }}</span></div>
+  {% else %}<p class="muted">Τίποτα ακόμα.</p>{% endfor %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+async function check() {
+  const out = document.getElementById('check-out');
+  out.textContent = 'Έλεγχος…';
+  try {
+    const r = await (await fetch('/api/check')).json();
+    const esc = (t) => String(t ?? '—').replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+    const line = (k, v) => `<div><b>${k}:</b> <span class="${v && v.startsWith('ok') ? 'pos' : 'neg'}">${esc(v)}</span></div>`;
+    out.innerHTML = line('Paperless', r.paperless) + line('Tag', r.tag) + line('Ollama', r.ollama);
+    document.getElementById('models').innerHTML = (r.models || []).map(m => `<option value="${esc(m)}">`).join('');
+  } catch (e) { out.textContent = 'Σφάλμα: ' + e; }
+}
+document.getElementById('check-btn').addEventListener('click', check);
+</script>
+{% endblock %}

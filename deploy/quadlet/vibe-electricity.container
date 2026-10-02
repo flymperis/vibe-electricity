@@ -1,0 +1,29 @@
+# Vibe Electricity as a systemd service (Podman Quadlet). Install: deploy/quadlet/README.md
+[Unit]
+Description=Vibe Electricity (electricity bills from Paperless)
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=vibe-electricity
+Image=vibe-electricity.build
+Volume=vibe-electricity.volume:/data:Z
+PublishPort=8002:8000
+EnvironmentFile=%h/vibe-electricity/.env
+# Join the network of your Paperless / Ollama containers to reach them by name
+# (PAPERLESS_URL=http://<paperless-container>:8000, OLLAMA_URL=http://<ollama-container>:11434).
+#Network=mynetwork.network
+HealthCmd=python -m vibe_electricity.healthcheck
+HealthInterval=60s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=30s
+
+[Service]
+Restart=always
+RestartSec=10
+# first start includes the image build
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

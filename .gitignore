@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+.pytest_cache/
+.claude/
+*.db
+*.db-shm
+*.db-wal
+PROGRESS.md

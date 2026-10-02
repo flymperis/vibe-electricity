@@ -1,0 +1,10 @@
+# Builds the image from a clone of the repo.
+# Default location: ~/vibe-electricity (rootless). Change SetWorkingDirectory if you cloned elsewhere.
+# Rebuild after `git pull`:  systemctl --user restart vibe-electricity-build.service vibe-electricity.service
+[Unit]
+Description=Vibe Electricity image build
+
+[Build]
+ImageTag=localhost/vibe-electricity:latest
+SetWorkingDirectory=%h/vibe-electricity
+Pull=newer

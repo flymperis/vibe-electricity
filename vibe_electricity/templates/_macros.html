@@ -1,0 +1,23 @@
+{% macro status_badge(st) -%}
+  {%- if st == 'ok' -%}<span class="badge ok" title="Όλοι οι έλεγχοι ταιριάζουν">✓ έλεγχος</span>
+  {%- elif st == 'warn' -%}<span class="badge warn" title="Κάποιος έλεγχος δεν ταιριάζει">! έλεγχος</span>
+  {%- elif st == 'fail' -%}<span class="badge bad">✗ σφάλμα</span>
+  {%- else -%}<span class="badge">{{ st }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro doc_badge(st) -%}
+  {%- set m = {'parsed': ('ok', 'διαβάστηκε'), 'duplicate': ('', 'διπλότυπο'), 'skipped': ('warn', 'παραλείφθηκε'),
+               'error': ('bad', 'σφάλμα'), 'untagged': ('', 'χωρίς tag'), 'new': ('accent', 'νέο')} -%}
+  {%- set c = m.get(st, ('', st)) -%}<span class="badge {{ c[0] }}">{{ c[1] }}</span>
+{%- endmacro %}
+
+{% macro method_badge(m) -%}
+  {%- if m == 'rules' -%}<span class="badge" title="Διαβάστηκε με τους κανόνες της ΔΕΗ">κανόνες</span>
+  {%- elif m == 'llm' -%}<span class="badge accent" title="Διαβάστηκε από το AI (Ollama)">AI</span>
+  {%- elif m == 'rules+llm' -%}<span class="badge accent" title="Κανόνες, με κενά συμπληρωμένα από το AI">κανόνες + AI</span>
+  {%- else -%}<span class="badge">{{ m }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro delta(v, invert=False) -%}
+  {%- if v is not none -%}<span class="delta {{ ('down' if invert else 'up') if v > 0 else (('up' if invert else 'down') if v < 0 else '') }}">{{ '▲' if v > 0 else ('▼' if v < 0 else '') }} {{ v|pct }}</span>{%- endif -%}
+{%- endmacro %}

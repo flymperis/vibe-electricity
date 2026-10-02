@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Ανάλυση · Vibe Electricity{% endblock %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+<div class="row page-head"><h1>Ανάλυση</h1></div>
+{% if not bills %}
+  <div class="panel empty"><div class="big">📈</div><p class="muted">Δεν υπάρχουν ακόμα λογαριασμοί για ανάλυση.</p></div>
+{% else %}
+<section class="panel pad">
+  <h2>Κατανάλωση ανά ημέρα, ίδιος μήνας κάθε χρονιάς</h2>
+  <div class="chart-box lg"><canvas id="c-yoy"></canvas></div>
+  <div class="legend-note">kWh την ημέρα, για να συγκρίνονται περίοδοι με διαφορετικό αριθμό ημερών.</div>
+</section>
+
+<div class="grid2" style="margin-top:14px">
+  <section class="panel pad">
+    <h2>Τιμές ανά kWh</h2>
+    <div class="chart-box"><canvas id="c-rates"></canvas></div>
+    <div class="legend-note">«Όλα μαζί» = κόστος περιόδου / kWh. «Ενέργεια» = η τιμή της ΔΕΗ για την κιλοβατώρα, πριν από δίκτυο, τέλη και ΦΠΑ.</div>
+  </section>
+  <section class="panel pad">
+    <h2>Κόστος ανά μήνα και χρονιά</h2>
+    <div class="chart-box"><canvas id="c-cost-yoy"></canvas></div>
+  </section>
+</div>
+
+<section class="panel pad" style="margin-top:14px">
+  <h2>Όλοι οι λογαριασμοί: κόστος και κατανάλωση</h2>
+  <div class="chart-box lg"><canvas id="c-all"></canvas></div>
+</section>
+
+<div class="grid2" style="margin-top:14px">
+  <section class="panel">
+    <h2 class="pad" style="margin:0;padding-bottom:0">Ανά χρονιά</h2>
+    <div class="table-wrap">
+      <table class="cards bills">
+        <thead><tr><th>Έτος</th><th class="num">Λογ.</th><th class="num">kWh</th><th class="num">kWh/ημ.</th><th class="num">Κόστος</th><th class="num">€/μήνα</th><th class="num">€/kWh</th></tr></thead>
+        <tbody>
+        {% for y, t in year_totals.items()|reverse %}
+          <tr>
+            <td class="c-period"><a href="/bills?year={{ y }}">{{ y }}</a> <span class="muted small m-only">{{ t.bills }} λογαριασμοί</span></td>
+            <td class="num d-only">{{ t.bills }}</td>
+            <td class="num c-metric" data-label="kWh">{{ t.kwh|num(0) }}</td>
+            <td class="num c-metric" data-label="kWh/ημ.">{{ t.kwh_per_day|num(1) }}</td>
+            <td class="num c-metric" data-label="Κόστος">{{ t.cost|eur }}</td>
+            <td class="num c-metric" data-label="€/μήνα">{{ t.cost_per_month|eur }}</td>
+            <td class="num c-metric" data-label="€/kWh">{{ t.rate|num(3) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted pad" style="margin:0">Κάθε λογαριασμός μετρά στον μήνα του μέσου της περιόδου του.</p>
+  </section>
+  <section class="panel pad">
+    <h2>Πού πήγαν τα χρήματα (όλη η περίοδος)</h2>
+    <div class="chart-box sm"><canvas id="c-comp"></canvas></div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if bills %}
+<script src="/static/charts.js?v={{ static_v('charts.js') }}"></script>
+<script>
+const S = {{ series|tojson }};
+const Y = {{ years|tojson }}, CY = {{ cost_years|tojson }};
+const M = {{ months|tojson }};
+const COMP = {{ composition|tojson }};
+const { C, fmt, alpha } = VE;
+const palette = [C.c5, C.c2, C.c3, C.c4, C.c1];
+const yearKeys = Object.keys(Y);
+const yearColor = (i) => i === yearKeys.length - 1 ? C.c1 : palette[i % palette.length];
+
+new Chart(document.getElementById('c-yoy'), {
+  type: 'line',
+  data: { labels: M, datasets: yearKeys.map((y, i) => ({
+    label: y, data: Y[y], borderColor: yearColor(i), backgroundColor: yearColor(i), spanGaps: true,
+    borderWidth: i === yearKeys.length - 1 ? 3 : 2 })) },
+  options: { scales: { y: { beginAtZero: true, ticks: { callback: (x) => x + ' kWh' } } },
+    plugins: { tooltip: { callbacks: { label: (c) => ' ' + c.dataset.label + ': ' + fmt.kwhd(c.raw) } } } },
+});
+
+new Chart(document.getElementById('c-rates'), {
+  type: 'line',
+  data: { labels: S.labels, datasets: [
+    { label: 'Όλα μαζί', data: S.all_in_rate, borderColor: C.c1, backgroundColor: C.c1, borderWidth: 2.5 },
+    { label: 'Ενέργεια', data: S.energy_rate, borderColor: C.c2, backgroundColor: C.c2 },
+    { label: 'Δίκτυο & ρυθμιζόμενες', data: S.regulated_rate, borderColor: C.c3, backgroundColor: C.c3 },
+  ]},
+  options: { scales: { y: { beginAtZero: true, ticks: { callback: (x) => fmt.num(2)(x) + ' €' } } },
+    plugins: { tooltip: { callbacks: { title: (it) => S.labels[it[0].dataIndex] + ' · ' + S.periods[it[0].dataIndex],
+      label: (c) => ' ' + c.dataset.label + ': ' + fmt.rate(c.raw) } } } },
+});
+
+new Chart(document.getElementById('c-cost-yoy'), {
+  type: 'bar',
+  data: { labels: M, datasets: Object.keys(CY).map((y, i) => ({
+    label: y, data: CY[y], backgroundColor: alpha(yearColor(i), i === yearKeys.length - 1 ? .9 : .6) })) },
+  options: { scales: { y: { beginAtZero: true, ticks: { callback: (x) => x + ' €' } } },
+    plugins: { tooltip: { callbacks: { label: (c) => ' ' + c.dataset.label + ': ' + fmt.eur(c.raw) } } } },
+});
+
+const goto = (evt, els) => { if (els.length) location.href = '/bills/' + S.ids[els[0].index]; };
+new Chart(document.getElementById('c-all'), {
+  data: { labels: S.labels, datasets: [
+    { type: 'bar', label: 'Προμήθεια', data: S.supply, backgroundColor: alpha(C.c1, .8), stack: 'c', yAxisID: 'y' },
+    { type: 'bar', label: 'Δίκτυο & ρυθμιζόμενες', data: S.regulated, backgroundColor: alpha(C.c2, .8), stack: 'c', yAxisID: 'y' },
+    { type: 'bar', label: 'Δήμος, ΕΡΤ, φόροι, ΦΠΑ', data: S.taxes, backgroundColor: alpha(C.c3, .75), stack: 'c', yAxisID: 'y' },
+    { type: 'line', label: 'kWh', data: S.kwh, borderColor: C.text, backgroundColor: C.text, yAxisID: 'y1', borderWidth: 1.5 },
+  ]},
+  options: { onClick: goto,
+    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: (x) => x + ' €' } },
+              y1: { position: 'right', beginAtZero: true, grid: { display: false }, ticks: { callback: (x) => x + ' kWh' } } },
+    plugins: { tooltip: { callbacks: {
+      title: (it) => S.labels[it[0].dataIndex] + ' · ' + S.periods[it[0].dataIndex] + ' · ' + fmt.eur(S.cost[it[0].dataIndex]),
+      label: (c) => ' ' + c.dataset.label + ': ' + (c.dataset.yAxisID === 'y1' ? fmt.kwh(c.raw) : fmt.eur(c.raw)) } } } },
+});
+
+const pos = COMP.filter(p => p.value > 0);
+new Chart(document.getElementById('c-comp'), {
+  type: 'doughnut',
+  data: { labels: pos.map(p => p.label), datasets: [{ data: pos.map(p => p.value), borderColor: C.panel, borderWidth: 2,
+    backgroundColor: [C.c1, C.c5, C.c2, C.c3, C.c4, getComputedStyle(document.documentElement).getPropertyValue('--warn').trim(), C.muted, C.bad] }] },
+  options: { cutout: '58%', interaction: { mode: 'nearest', intersect: true },
+    plugins: { legend: { position: VE.small() ? 'bottom' : 'right' },
+      tooltip: { callbacks: { label: (c) => ' ' + fmt.eur(c.raw) + ' (' + pos[c.dataIndex].pct.toLocaleString('el-GR') + '%)' } } } },
+});
+</script>
+{% endif %}
+{% endblock %}

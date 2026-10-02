@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge, method_badge, doc_badge %}
+{% block title %}{{ month_label(b.month, True) }} · Vibe Electricity{% endblock %}
+{% block content %}
+{% if msg %}<div class="flash">{{ msg }}</div>{% endif %}
+<div class="row page-head">
+  <div>
+    <h1>Λογαριασμός {{ month_label(b.month, True) }}</h1>
+    <div class="row meta">{{ status_badge(b.status) }} {{ method_badge(b.method) }}
+      <span class="muted small">{{ b.supplier or '' }} · {{ field_value('bill_kind', b.bill_kind) }} · {{ b.tariff or '' }}</span></div>
+  </div>
+  <div class="nav-pn">
+    {% if prev_bill %}<a class="btn ghost" href="/bills/{{ prev_bill.id }}">← {{ month_label(prev_bill.month) }}</a>{% endif %}
+    {% if next_bill %}<a class="btn ghost" href="/bills/{{ next_bill.id }}">{{ month_label(next_bill.month) }} →</a>{% endif %}
+  </div>
+</div>
+
+<div class="kpis four">
+  <div class="panel kpi hero"><span class="k">Σύνολο πληρωμής</span><span class="v">{{ b.total_payable|eur }}</span>
+    <span class="sub">λήξη {{ b.due_date|dt }}</span></div>
+  <div class="panel kpi"><span class="k">Κατανάλωση</span><span class="v">{{ b.kwh|num(0) }} <small>kWh</small></span>
+    <span class="sub">{{ b.period_start|dt }} – {{ b.period_end|dt }} · {{ b.period_days }} ημ. · {{ b.kwh_per_day|num(1) }} kWh/ημ.</span></div>
+  <div class="panel kpi"><span class="k">Κόστος περιόδου</span><span class="v">{{ b.period_cost|eur }}</span>
+    <span class="sub">{{ b.cost_per_day|eur }} την ημέρα, χωρίς στρογγυλοποιήσεις</span></div>
+  <div class="panel kpi"><span class="k">€/kWh με όλες τις χρεώσεις</span><span class="v">{{ b.all_in_rate|num(4) }}</span>
+    <span class="sub">ενέργεια μόνο: {{ b.energy_rate|num(5) }} €/kWh</span></div>
+</div>
+
+{% if b.supply_total is not none %}
+<section class="panel pad" style="margin-bottom:14px">
+  <h2>Ανάλυση ποσού</h2>
+  {% set parts = [('Προμήθεια', b.supply_total, '--c1'), ('Ρυθμιζόμενες', b.regulated_total, '--c2'),
+                  ('Δήμος, ΕΡΤ, λοιπά', (b.misc_total or 0) - (b.rounding_current or 0) - (b.rounding_previous or 0), '--c3'),
+                  ('ΦΠΑ', b.vat, '--c4')] %}
+  {% set tot = parts|map(attribute=1)|map('default', 0, true)|sum %}
+  <div class="bar">{% for p in parts %}{% if p[1] and p[1] > 0 %}<span style="width:{{ p[1] / tot * 100 }}%;background:var({{ p[2] }})"></span>{% endif %}{% endfor %}</div>
+  <div class="legend">{% for p in parts %}<span><i style="background:var({{ p[2] }})"></i>{{ p[0] }} {{ p[1]|eur }}</span>{% endfor %}</div>
+</section>
+{% endif %}
+
+{% if edit %}
+<form method="post" action="/bills/{{ b.id }}/edit" class="edit-form">
+  <div class="groups">
+  {% for gkey, glabel in GROUPS.items() %}
+    <section class="panel pad">
+      <h2>{{ glabel }}</h2>
+      <div class="field-grid">
+      {% for f in FIELDS if f.group == gkey %}
+        {% set v = b[f.name] %}
+        <div><label for="f-{{ f.name }}" class="small muted">{{ f.label }}{% if f.name in b.overrides %} ✎{% endif %}</label>
+          {% if f.kind == 'date' %}<input id="f-{{ f.name }}" type="date" name="{{ f.name }}" value="{{ v.isoformat() if v else '' }}">
+          {% elif f.kind == 'text' %}<input id="f-{{ f.name }}" name="{{ f.name }}" value="{{ v if v is not none else '' }}">
+          {% else %}<input id="f-{{ f.name }}" name="{{ f.name }}" inputmode="decimal" value="{{ v if v is not none else '' }}">{% endif %}
+        </div>
+      {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+  </div>
+  <div class="save-bar"><span class="muted">Οι διορθώσεις κρατιούνται και όταν ο λογαριασμός ξαναδιαβαστεί.</span>
+    <a class="btn ghost" href="/bills/{{ b.id }}">Άκυρο</a><button type="submit">Αποθήκευση</button></div>
+</form>
+{% else %}
+<div class="groups">
+  <section class="panel pad">
+    <h2>Έλεγχοι</h2>
+    <ul class="checks">
+      {% for c in b.checks %}<li class="{{ 'ok' if c.ok else 'bad' }}"><span class="ic">{{ '✓' if c.ok else '✗' }}</span><span>{{ c.message }}</span></li>{% endfor %}
+    </ul>
+    <p class="small muted" style="margin-bottom:0">Αν όλα τα επιμέρους ποσά αθροίζουν στα σύνολα του λογαριασμού, η ανάγνωση είναι σωστή.</p>
+  </section>
+  {% for gkey, glabel in GROUPS.items() %}
+    <section class="panel pad">
+      <h2>{{ glabel }}</h2>
+      <dl class="field-grid">
+      {% for f in FIELDS if f.group == gkey and (b[f.name] is not none or f.name in ('kwh','total_payable','period_start','period_end')) %}
+        <div class="{{ 'edited' if f.name in b.overrides }}"><dt>{{ f.label }}</dt><dd>{{ field_value(f.name, b[f.name]) }}</dd></div>
+      {% endfor %}
+      {% if gkey == 'supply' and b.tiers %}
+        {% for t in b.tiers %}<div><dt>Κλιμάκιο {{ loop.index }}</dt><dd>{{ t[0]|num(0) }} kWh × {{ t[1]|num(5) }} €</dd></div>{% endfor %}
+      {% endif %}
+      </dl>
+    </section>
+  {% endfor %}
+  <section class="panel pad">
+    <h2>Έγγραφα στο Paperless</h2>
+    {% for d in docs %}
+      <div class="row" style="justify-content:space-between;padding:4px 0">
+        <a href="{{ doc_link(d.paperless_id) }}" target="_blank" rel="noopener">#{{ d.paperless_id }} {{ d.title }} ↗</a>{{ doc_badge(d.status) }}
+      </div>
+    {% endfor %}
+    <div class="row" style="margin-top:12px;gap:8px">
+      <a class="btn" href="/bills/{{ b.id }}?edit=1">✎ Διόρθωση</a>
+      <form method="post" action="/bills/{{ b.id }}/reread"><button class="ghost" title="Ξαναδιαβάζει το κείμενο από το Paperless (οι διορθώσεις σου μένουν)">↻ Ξαναδιάβασμα</button></form>
+      {% if b.overrides %}<form method="post" action="/bills/{{ b.id }}/clear-overrides"><button class="ghost">Αναίρεση διορθώσεων</button></form>{% endif %}
+      <form method="post" action="/bills/{{ b.id }}/delete" onsubmit="return confirm('Διαγραφή του λογαριασμού από την εφαρμογή; Το έγγραφο στο Paperless δεν αγγίζεται.')">
+        <button class="ghost danger-text">Διαγραφή</button></form>
+    </div>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

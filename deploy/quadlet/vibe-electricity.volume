@@ -1,0 +1,11 @@
+# SQLite database. Same name as the docker/podman-compose volume, so switching keeps the data.
+[Volume]
+VolumeName=vibe-electricity-data
+
+# Where the database lives on the host. Default: Podman's own storage,
+#   ~/.local/share/containers/storage/volumes/vibe-electricity-data/_data
+# To keep it in your own folder, uncomment the three lines and set Device= to a folder
+# used only by Vibe Electricity (it is relabelled for SELinux).
+#Device=/srv/vibe-electricity
+#Type=none
+#Options=bind

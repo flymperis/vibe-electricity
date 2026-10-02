@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="el">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171a21" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Vibe Electricity">
+  <title>{% block title %}Vibe Electricity{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ static_v('style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23c2410c'/><path d='M18 4 8 18h7l-2 10 11-15h-7z' fill='white'/></svg>">
+  {% block head %}{% endblock %}
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><span class="bolt">⚡</span> Vibe <span>Electricity</span></a>
+  {% set path = request.url.path %}
+  {% set nav = [
+    ('/', path == '/', 'Επισκόπηση', 'Επισκόπηση', '<path d="M3 12 12 4l9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>'),
+    ('/bills', path.startswith('/bills'), 'Λογαριασμοί', 'Λογαριασμοί', '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+    ('/analysis', path == '/analysis', 'Ανάλυση', 'Ανάλυση', '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    ('/settings', path == '/settings', 'Ρυθμίσεις', 'Ρυθμίσεις', '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>'),
+  ] %}
+  <nav class="top-nav">
+    {% for href, on, label, short, icon in nav %}<a href="{{ href }}" class="{{ 'on' if on }}" {% if on %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+  </nav>
+  <div class="spacer"></div>
+  <form method="post" action="/sync" class="inline" id="sync-form">
+    <input type="hidden" name="back" value="{{ path }}">
+    <button type="submit" id="sync-btn" {{ 'disabled' if running }} title="Έλεγχος στο Paperless για νέους λογαριασμούς">
+      {% if running %}<span class="spinner"></span> Συγχρονισμός…{% else %}↻<span class="d-only"> Συγχρονισμός</span>{% endif %}
+    </button>
+  </form>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<nav class="bottom-nav" aria-label="Μενού">
+  {% for href, on, label, short, icon in nav %}
+  <a href="{{ href }}" class="{{ 'on' if on }}" {% if on %}aria-current="page"{% endif %} aria-label="{{ label }}">
+    <svg viewBox="0 0 24 24" aria-hidden="true">{{ icon|safe }}</svg><span>{{ short }}</span></a>
+  {% endfor %}
+</nav>
+<script>
+// While a sync runs, poll and reload when it finishes.
+(function () {
+  const btn = document.getElementById('sync-btn');
+  let wasRunning = {{ 'true' if running else 'false' }};
+  document.getElementById('sync-form').addEventListener('submit', () => { wasRunning = true; });
+  async function poll() {
+    try {
+      const r = await (await fetch('/status')).json();
+      if (r.running) {
+        btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Συγχρονισμός…'; wasRunning = true;
+      } else if (wasRunning) { location.reload(); return; }
+    } catch (e) {}
+    setTimeout(poll, wasRunning ? 2500 : 30000);
+  }
+  setTimeout(poll, wasRunning ? 2500 : 30000);
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
